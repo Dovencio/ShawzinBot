@@ -63,6 +63,25 @@ namespace ShawzinBot.ViewModels
             TransposeNotes = Properties.Settings.Default.TransposeNotes;
             PlayThroughSpeakers = Properties.Settings.Default.PlayThroughSpeakers;
             PlaybackCurrentTimeWatcher.Instance.PollingInterval = TimeSpan.FromSeconds(1);
+
+            ProcessArgs(Environment.GetCommandLineArgs());
+        }
+
+        private void ProcessArgs(string[] args)
+        {
+            // For processing arguments
+            foreach (string arg in args)
+            {
+                // Console.WriteLine($"ARG: {arg}");
+                // Get file extention
+                string ext = Path.GetExtension(arg);
+                // Looks for the first valid *.mid or *.midi file given
+                if (ext == ".mid" || ext == ".midi")
+                {
+                    OpenFile(arg);
+                    return;
+                }
+            }
         }
 
         #endregion
@@ -202,7 +221,7 @@ namespace ShawzinBot.ViewModels
         public void OpenFile()
         {
             var openFileDialog = new OpenFileDialog();
-			openFileDialog.Filter = "MIDI file|*.mid;*.midi"; // Filter to only midi files
+            openFileDialog.Filter = "MIDI file|*.mid;*.midi"; // Filter to only midi files
             if (openFileDialog.ShowDialog() != true) return;
 
             CloseFile();
@@ -230,6 +249,37 @@ namespace ShawzinBot.ViewModels
 
             playback.EventPlayed += OnNoteEvent;
         }
+
+        // Option to supply a path instead of asking the user
+        // Path must be .mid or .midi, will not check for error
+        public void OpenFile(string path)
+        {
+            CloseFile();
+            midiFile = MidiFile.Read(path);
+            SongName = Path.GetFileNameWithoutExtension(path);
+
+            tempoMap = midiFile.GetTempoMap();
+
+            TimeSpan midiFileDuration = midiFile.GetDuration<MetricTimeSpan>();
+            TotalTime = midiFileDuration.ToString("m\\:ss");
+            MaximumTime = midiFileDuration.TotalSeconds;
+            SongSlider = 0;
+            CurrentTime = "0:00";
+
+            playback = midiFile.GetPlayback(OutputDevice.GetById(0));
+
+            playback.Finished += (s, e) =>
+            {
+                CloseFile();
+            };
+
+            PlaybackCurrentTimeWatcher.Instance.AddPlayback(playback, TimeSpanType.Metric);
+            PlaybackCurrentTimeWatcher.Instance.CurrentTimeChanged += OnTick;
+            PlaybackCurrentTimeWatcher.Instance.Start();
+
+            playback.EventPlayed += OnNoteEvent;
+        }
+
 
         public void CloseFile()
         {
@@ -276,7 +326,7 @@ namespace ShawzinBot.ViewModels
                     playback.OutputDevice = OutputDevice.GetById(0);
                 }
 
-				ActionManager.OnSongPlay();
+                ActionManager.OnSongPlay();
 
                 playback.Start();
             }
@@ -318,7 +368,7 @@ namespace ShawzinBot.ViewModels
         {
             foreach (var playbackTime in e.Times)
             {
-                TimeSpan time = (MetricTimeSpan) playbackTime.Time;
+                TimeSpan time = (MetricTimeSpan)playbackTime.Time;
 
                 SongSlider = time.TotalSeconds;
                 CurrentTime = time.ToString("m\\:ss");
